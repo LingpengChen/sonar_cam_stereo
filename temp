@@ -1,0 +1,14 @@
+Error occurred: unsupported export format: dae
+Traceback (most recent call last):
+  File "change_mesh.py", line 134, in main
+    process_mesh(
+  File "change_mesh.py", line 116, in process_mesh
+    new_scene.export(output_path)
+  File "/home/clp/.local/lib/python3.8/site-packages/trimesh/scene/scene.py", line 1034, in export
+    return export.export_scene(
+  File "/home/clp/.local/lib/python3.8/site-packages/trimesh/exchange/export.py", line 285, in export_scene
+    raise ValueError(f"unsupported export format: {file_type}")
+ValueError: unsupported export format: dae
+
+
+请问我如果只想取处理过的mesh里面中间5*5的区域，
