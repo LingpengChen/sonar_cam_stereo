@@ -34,36 +34,44 @@ class DataCollector:
         
         # 创建存储目录
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.save_rgb_dir = os.path.join(self.base_dir, "data/rgb")
+        self.save_rgb_ref_dir = os.path.join(self.base_dir, "data/rgb_ref") # right
+        self.save_rgb_source_dir = os.path.join(self.base_dir, "data/rgb_source") # left
         self.save_depth_dir = os.path.join(self.base_dir, "data/depth")
         self.save_pose_dir = os.path.join(self.base_dir, "data/pose")
         
-        for dir_path in [self.save_rgb_dir, self.save_depth_dir, self.save_pose_dir]:
+        for dir_path in [self.save_rgb_ref_dir, self.save_rgb_source_dir, self.save_depth_dir, self.save_pose_dir]:
             if not os.path.exists(dir_path):
                 os.makedirs(dir_path)
 
         # 初始化变量
         self.bridge = CvBridge()
+        
         self.current_pose = None
-        self.current_rgb = None
+        self.current_rgb_ref = None
+        self.current_rgb_source = None
         self.current_depth = None
+        
         self.counter = 0
 
         # 订阅话题
         rospy.Subscriber('/gazebo/link_states', LinkStates, self.pose_callback)
-        rospy.Subscriber('/rexrov/rexrov/cameraright/rgb/image_raw', Image, self.rgb_callback)
-        rospy.Subscriber('/rexrov/rexrov/cameraright/depth/image_raw', Image, self.depth_callback)
+        rospy.Subscriber('/rexrov/rexrov/camera_ref/rgb/image_raw', Image, self.rgb_ref_callback)
+        rospy.Subscriber('/rexrov/rexrov/camera_source/rgb/image_raw', Image, self.rgb_source_callback)
+        rospy.Subscriber('/rexrov/rexrov/camera_ref/depth/image_raw', Image, self.depth_callback)
 
     def pose_callback(self, msg):
         try:
             # 找到目标link的索引
-            index = msg.name.index('rexrov::rexrov/cameraright_link')
+            index = msg.name.index('rexrov::rexrov/camera_ref_link')
             self.current_pose = msg.pose[index]
         except ValueError:
             rospy.logwarn("Cannot find camera link in link states")
 
-    def rgb_callback(self, msg):
-        self.current_rgb = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+    def rgb_ref_callback(self, msg):
+        self.current_rgb_ref = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+    
+    def rgb_source_callback(self, msg):
+        self.current_rgb_source = self.bridge.imgmsg_to_cv2(msg, "bgr8")
 
     def depth_callback(self, msg):
         self.current_depth = self.bridge.imgmsg_to_cv2(msg, "32FC1")
@@ -71,19 +79,23 @@ class DataCollector:
     def save_data(self):
         print(f"Save {self.counter}")
         if (self.current_pose is None or 
-            self.current_rgb is None or 
+            self.current_rgb_ref is None or 
+            self.save_rgb_source_dir is None or 
             self.current_depth is None):
             rospy.logwarn("Some data is not ready yet")
             return
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        print(self.current_rgb.shape)
+        print(self.current_rgb_ref.shape)
+        print(self.current_rgb_source.shape)
         print(self.current_depth.shape)
         print(self.current_pose)
         # 保存RGB图像
-        rgb_filename = os.path.join(self.save_rgb_dir, f"rgb_{self.counter}.png")
-        cv2.imwrite(rgb_filename, self.current_rgb)
+        rgb_filename = os.path.join(self.save_rgb_ref_dir, f"rgb_{self.counter}.png")
+        cv2.imwrite(rgb_filename, self.current_rgb_ref)
+        rgb_filename = os.path.join(self.save_rgb_source_dir, f"rgb_{self.counter}.png")
+        cv2.imwrite(rgb_filename, self.current_rgb_source)
 
         # 保存深度图像
         depth_filename = os.path.join(self.save_depth_dir, f"depth_{self.counter}")

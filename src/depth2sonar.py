@@ -73,28 +73,27 @@ def get_rectangular_image(depth_data:np.ndarray,
         max_range: sonar detection range (max depth of depth image)
     '''
     # width = depth_data.shape[1]
-    sonar_image = np.zeros((n_ranges, n_azimuths), dtype=np.float32)
+    sonar_image_rect = np.zeros((n_ranges, n_azimuths), dtype=np.float32)
     
     v_indices, u_indices = np.where(~np.isnan(depth_data))
     depths = depth_data[v_indices, u_indices]
     theta = u_indices
     for theta, d in zip(theta, depths):
         range = int( n_ranges * d / max_range)
-        sonar_image[range][theta] += range
-    sonar_image = sonar_image / np.max(sonar_image)
-    
+        sonar_image_rect[range][theta] += range
+        
+    sonar_image_rect = sonar_image_rect / np.max(sonar_image_rect)
+    sonar_image_rect = (255 * sonar_image_rect).astype(np.uint8)
+
     # 应用高斯模糊使点更明显
-    # sonar_image = cv2.GaussianBlur(sonar_image, (5, 5), 0)
+    # sonar_image_rect = cv2.GaussianBlur(sonar_image_rect, (5, 5), 0)
     
     # # 应用伽马校正增强对比度
-    # sonar_image = np.power(sonar_image, gamma=0.7)
+    # sonar_image_rect = np.power(sonar_image_rect, gamma=0.7)
     
-    sonar_color = cv2.applyColorMap(
-            (255 * sonar_image).astype(np.uint8), 
-            cv2.COLORMAP_HOT
-        )
+    sonar_image_rect_color = cv2.applyColorMap(sonar_image_rect, cv2.COLORMAP_HOT)
     
-    return sonar_image, sonar_color
+    return sonar_image_rect, sonar_image_rect_color
 
 
 def rect_to_sonar_map(rect_image: np.ndarray,
@@ -143,30 +142,48 @@ def rect_to_sonar_map(rect_image: np.ndarray,
     sonar_image = cv2.remap(rect_image, map_x, map_y, cv2.INTER_CUBIC,
                            borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
     
-    return sonar_image
+    sonar_image_color = cv2.applyColorMap(sonar_image, cv2.COLORMAP_HOT)
+    
+    return sonar_image, sonar_image_color
 
 if __name__ == "__main__":
 
     # 获取目录中所有的.npy文件
-    depth_data_dir = "/home/clp/catkin_ws/src/sonar_cam_stereo/src/data/depth"
+    depth_data_dir = str(os.path.abspath(os.path.dirname(__file__))) + "/data/depth"
+    # Save dir
+    sonar_data_dir = str(os.path.abspath(os.path.dirname(__file__))) + "/data/sonar_rect"
+    # depth_data_dir = "/home/clp/catkin_ws/src/sonar_cam_stereo/src/data/depth"
+    if not os.path.exists(sonar_data_dir):
+        os.makedirs(sonar_data_dir)
+        
     npy_files = glob.glob(os.path.join(depth_data_dir, "*.npz"))
     npy_files = sorted(npy_files)
 
+    counter = 0
     for current_file in npy_files:
-        filename = os.path.basename(current_file)
         depth_data = load_depth_from_npy(current_file)
+        
+        # show depth image
         depth_colormap = visualize_depth(depth_data)
         cv2.imshow("Depth Image", depth_colormap)
         
-        # sonar_image, sonar_color = generate_sonar_view(depth_data)
-        sonar_image_rect, sonar_color_rect = get_rectangular_image(depth_data)
-        
+        # get rectangle sonar image
+        sonar_image_rect, sonar_image_rect_color = get_rectangular_image(depth_data)
+
+        np.save(os.path.join(sonar_data_dir, f"sonar_{counter}.npy"), sonar_image_rect)
+
+        # visualization
         # cv2.imshow will set upper left corner as (0,0), 
         # for better visualization we set bottom left as (0,0) by flipping
-        cv2.imshow("sonar_color_rect",  cv2.flip(sonar_color_rect, 0))
-      
-        sonar_color = rect_to_sonar_map(sonar_color_rect)
+        cv2.imshow("sonar_image_rect",  cv2.flip(sonar_image_rect, 0))
+        cv2.imshow("sonar_image_rect_color",  cv2.flip(sonar_image_rect_color, 0))
 
-        cv2.imshow("sonar_color", cv2.flip(sonar_color, 0))
-        cv2.waitKey(0)
-        break
+        # get sonar image 
+        sonar_image, sonar_image_color = rect_to_sonar_map(sonar_image_rect)
+
+        cv2.imshow("sonar_image", cv2.flip(sonar_image, 0))
+        cv2.imshow("sonar_image_color", cv2.flip(sonar_image_color, 0))
+        cv2.waitKey(10)
+        
+        counter += 1
+        # break
