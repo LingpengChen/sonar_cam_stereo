@@ -151,8 +151,11 @@ if __name__ == "__main__":
     # 获取目录中所有的.npy文件
     depth_data_dir = str(os.path.abspath(os.path.dirname(__file__))) + "/data/depth"
     # Save dir
-    sonar_data_dir = str(os.path.abspath(os.path.dirname(__file__))) + "/data/sonar_rect"
+    sonar_rect_data_dir = str(os.path.abspath(os.path.dirname(__file__))) + "/data/sonar_rect"
+    sonar_data_dir = str(os.path.abspath(os.path.dirname(__file__))) + "/data/sonar"
     # depth_data_dir = "/home/clp/catkin_ws/src/sonar_cam_stereo/src/data/depth"
+    if not os.path.exists(sonar_rect_data_dir):
+        os.makedirs(sonar_rect_data_dir)
     if not os.path.exists(sonar_data_dir):
         os.makedirs(sonar_data_dir)
         
@@ -170,7 +173,7 @@ if __name__ == "__main__":
         # get rectangle sonar image
         sonar_image_rect, sonar_image_rect_color = get_rectangular_image(depth_data)
 
-        np.save(os.path.join(sonar_data_dir, f"sonar_{counter}.npy"), sonar_image_rect)
+        np.save(os.path.join(sonar_rect_data_dir, f"sonar_rect_{counter}.npy"), sonar_image_rect)
 
         # visualization
         # cv2.imshow will set upper left corner as (0,0), 
@@ -180,6 +183,7 @@ if __name__ == "__main__":
 
         # get sonar image 
         sonar_image, sonar_image_color = rect_to_sonar_map(sonar_image_rect)
+        np.save(os.path.join(sonar_data_dir, f"sonar_{counter}.npy"), sonar_image)
 
         cv2.imshow("sonar_image", cv2.flip(sonar_image, 0))
         cv2.imshow("sonar_image_color", cv2.flip(sonar_image_color, 0))
