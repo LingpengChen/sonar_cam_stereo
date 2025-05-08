@@ -1,135 +1,211 @@
 import numpy as np
-import cv2
-import torch
-import torch.nn.functional as F
+import cv2, os
+from load import DataLoader
+from scipy.spatial.transform import Rotation as R
 
-class PlaneSweepingStereo:
-    def __init__(self, fx, fy, cx, cy, num_planes=64, min_depth=0.5, max_depth=5.0):
-        """
-        初始化参数
-        fx, fy: 相机内参焦距
-        cx, cy: 相机主点
-        num_planes: 虚拟平面数量
-        min_depth, max_depth: 深度范围
-        """
-        self.K = np.array([[fx, 0, cx],
-                          [0, fy, cy],
-                          [0, 0, 1]], dtype=np.float32)
-        self.K_inv = np.linalg.inv(self.K)
-        self.num_planes = num_planes
-        self.min_depth = min_depth
-        
-        # 按照公式生成虚拟平面的深度值
-        self.depths = []
-        for l in range(1, num_planes + 1):
-            dl = (num_planes * min_depth) / l
-            self.depths.append(dl)
-        self.depths = np.array(self.depths)
-        
-        # 相机变换 (baseline = 20cm)
-        self.T = np.array([0.2, 0, 0])
-        self.R = np.eye(3)
 
-    def warp_image(self, source_image, depth):
-        """将source image按照给定深度warp到reference视角"""
-        h, w = source_image.shape[:2]
-        
-        # 生成像素网格
-        y, x = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
-        pixels = np.stack([x, y, np.ones_like(x)], axis=-1)
-        
-        # 反投影到3D空间
-        points_3d = self.K_inv @ pixels.reshape(-1, 3).T
-        points_3d *= depth.reshape(-1, 1)
-        
-        # 将3D点变换到source frame
-        points_3d = self.R @ points_3d + self.T.reshape(3, 1)
-        
-        # 投影回2D
-        points_2d = self.K @ points_3d
-        points_2d = points_2d[:2] / points_2d[2]
-        points_2d = points_2d.T.reshape(h, w, 2)
-        
-        # 使用pytorch进行双线性插值
-        source_image_torch = torch.from_numpy(source_image).float().permute(2, 0, 1).unsqueeze(0)
-        points_2d_torch = torch.from_numpy(points_2d).float()
-        
-        # 归一化坐标到[-1, 1]
-        points_2d_norm = torch.stack([
-            2 * points_2d_torch[..., 0] / (w - 1) - 1,
-            2 * points_2d_torch[..., 1] / (h - 1) - 1
-        ], dim=-1)
-        
-        # 进行网格采样
-        warped_image = F.grid_sample(
-            source_image_torch,
-            points_2d_norm.unsqueeze(0),
-            mode='bilinear',
-            padding_mode='zeros'
-        )
-        
-        return warped_image.squeeze(0).permute(1, 2, 0).numpy()
+def get_rpy_from_matrix(matrix):
+    # 确保输入是一个4x4的转移矩阵
+    if matrix.shape != (4, 4):
+        raise ValueError("输入必须是4x4的转移矩阵")
+    
+    # 提取3x3旋转矩阵
+    rotation_matrix = matrix[:3, :3]
+    
+    # 使用scipy的Rotation类将旋转矩阵转换为欧拉角
+    r = R.from_matrix(rotation_matrix)
+    euler_angles = r.as_euler('xyz', degrees=True)
+    
+    # 返回roll, pitch, yaw (单位：度)
+    return euler_angles
 
-    def build_cost_volume(self, ref_image, source_image):
-        """构建cost volume"""
-        h, w = ref_image.shape[:2]
-        cost_volume = np.zeros((h, w, self.num_planes))
+def warp(sonar_rect, depth, phi, pitch):
+    """
+    将原图像通过给定的投影关系变换到目标图像
+    
+    参数:
+    sonar_rect: 原始图像 (numpy数组)
+    depth: 深度值
+    phi: 水平视角（弧度）
+    pitch: 俯仰角（弧度）
+    
+    返回:
+    transformed_image: 变换后的图像
+    """
+    # 相机内参
+    fx = 360
+    fy = 360
+    cx = 360
+    cy = 240
+    
+    K = np.array([
+        [fx, 0, cx],
+        [0, fy, cy],
+        [0, 0, 1]
+    ])
+    
+    # 获取原图像尺寸
+    src_height, src_width = sonar_rect.shape[:2]
+    
+    # 创建目标图像
+    height = 480
+    width = 720
+    if len(sonar_rect.shape) == 3:  # 彩色图像
+        result = np.zeros((height, width, 3), dtype=np.uint8)
+    else:  # 灰度图像
+        result = np.zeros((height, width), dtype=np.uint8)
+    
+    # 计算相机内参逆矩阵
+    K_inv = np.linalg.inv(K)
+    
+    def transform_coordinates(u, v):
+        # 目标图像中的点 p_c
+        p_c = np.array([u, v, 1])
         
-        # 归一化图像值到[0,1]
-        ref_image = ref_image.astype(np.float32) / 255.0
-        source_image = source_image.astype(np.float32) / 255.0
+        # 通过 K 的逆矩阵得到归一化坐标
+        p_normalized = K_inv @ p_c  # [x/y, (x-depth)tan/y, 1]
         
-        for i, depth in enumerate(self.depths):
-            # 对每个深度假设进行warping
-            warped_image = self.warp_image(source_image, depth)
+        # 通过逆向投影过程计算3D点坐标
+        a = p_normalized[0] 
+        b = p_normalized[1] 
+        
+        theta = np.arctan(a)
+        d = depth*np.tan(pitch)/(b+np.tan(pitch))
+        
+        theta_prime = 8 * (np.rad2deg(theta)+45)
+        d_prime = 100 * d
+        
+        return theta, d, theta_prime, d_prime
+    u,v=1,1
+    theta, d, theta_prime, d_prime = transform_coordinates(u,v)
+    print(u,v,theta,d, theta_prime, d_prime)
+        
+    u,v=720,1
+    theta, d, theta_prime, d_prime = transform_coordinates(u,v)
+    print(u,v,theta,d, theta_prime, d_prime)
+        
+    u,v=1,480
+    theta, d, theta_prime, d_prime = transform_coordinates(u,v)
+    print(u,v,theta,d, theta_prime, d_prime)
+        
+    u,v=720,480
+    theta, d, theta_prime, d_prime = transform_coordinates(u,v)
+    print(u,v,theta,d, theta_prime, d_prime)
+    
+    u,v=360,0
+    theta, d, theta_prime, d_prime = transform_coordinates(u,v)
+    print(u,v,theta,d, theta_prime, d_prime)
+    
+    # 对目标图像的每个像素进行处理
+    for v in range(height):
+        for u in range(width):
+            _, _, u_prime, v_prime = transform_coordinates(u, v)
             
-            # 计算光度误差 (可以选择不同的误差度量)
-            # 这里使用L1距离
-            cost = np.abs(ref_image - warped_image).mean(axis=2)
-            cost_volume[..., i] = cost
-            
-        return cost_volume
+            # 检查坐标是否在原图像范围内
+            if 0 <= u_prime < src_width - 1 and 0 <= v_prime < src_height - 1:
+                # 双线性插值
+                
+                # 获取周围四个像素的整数坐标
+                u_floor = int(np.floor(u_prime))
+                v_floor = int(np.floor(v_prime))
+                u_ceil = u_floor + 1
+                v_ceil = v_floor + 1
+                
+                # 确保索引不超出图像边界
+                if u_ceil >= src_width:
+                    u_ceil = src_width - 1
+                if v_ceil >= src_height:
+                    v_ceil = src_height - 1
+                
+                # 计算插值权重
+                u_weight = u_prime - u_floor
+                v_weight = v_prime - v_floor
+                
+                # 执行双线性插值
+                if len(sonar_rect.shape) == 3:  # 彩色图像
+                    # 提取四个角点的像素值
+                    p1 = sonar_rect[v_floor, u_floor].astype(float)
+                    p2 = sonar_rect[v_floor, u_ceil].astype(float)
+                    p3 = sonar_rect[v_ceil, u_floor].astype(float)
+                    p4 = sonar_rect[v_ceil, u_ceil].astype(float)
+                    
+                    # 双线性插值计算
+                    pixel_value = (1 - u_weight) * (1 - v_weight) * p1 + \
+                                  u_weight * (1 - v_weight) * p2 + \
+                                  (1 - u_weight) * v_weight * p3 + \
+                                  u_weight * v_weight * p4
+                    
+                    result[v, u] = pixel_value.astype(np.uint8)
+                else:  # 灰度图像
+                    # 提取四个角点的像素值
+                    p1 = float(sonar_rect[v_floor, u_floor])
+                    p2 = float(sonar_rect[v_floor, u_ceil])
+                    p3 = float(sonar_rect[v_ceil, u_floor])
+                    p4 = float(sonar_rect[v_ceil, u_ceil])
+                    
+                    # 双线性插值计算
+                    pixel_value = (1 - u_weight) * (1 - v_weight) * p1 + \
+                                  u_weight * (1 - v_weight) * p2 + \
+                                  (1 - u_weight) * v_weight * p3 + \
+                                  u_weight * v_weight * p4
+                    
+                    result[v, u] = int(pixel_value)
+    
+    return result
 
-    def depth_regression(self, cost_volume):
-        """深度回归"""
-        costs = torch.from_numpy(cost_volume).float()
-        probs = F.softmax(-costs, dim=-1)  # 将cost转换为概率，注意负号
-        
-        depth_hypotheses = torch.from_numpy(self.depths).float()
-        pred_depth = torch.sum(probs * depth_hypotheses.view(1, 1, -1), dim=-1)
-        
-        return pred_depth.numpy()
+# 示例使用
+def main():
+    # 替换为你的数据目录路径
+    data_path = os.path.dirname(os.path.abspath(__file__)) + "/data"
+    
+    # 创建数据加载器
+    loader = DataLoader(data_path)
+    
+    # 读取第一帧数据
+    rgb, depth, pose, sonar, sonar_rect = loader.load_frame(0)
+    
+    # 打印数据信息
+    print("RGB image shape:", rgb.shape)
+    print("Depth image shape:", depth.shape)
+    print("Pose matrix:\n", pose)
+    
+    print("Sonar image shape:", sonar.shape)
+    print("sonar_rect image shape:", sonar_rect.shape)
+    
+    
+    rpy = get_rpy_from_matrix(pose)
+    print(f"Roll (度): {rpy[0]:.2f}")
+    print(f"Pitch (度): {rpy[1]:.2f}")
+    print(f"Yaw (度): {rpy[2]:.2f}")
+    
+    # 定义变换参数
+    depth = 3  # 深度值
+    phi = 0.5 * 67.38 * np.pi/180  # 水平视角
+    pitch = 15 * np.pi/180  # 俯仰角（示例值）
+    
+    # 执行变换
+    transformed_image = warp(sonar_rect, depth, phi, pitch)
+    
+    # 显示结果
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(12, 6))
+    plt.subplot(121)
+    plt.title('sonar_rect')
+    plt.imshow(sonar_rect)
+    plt.axis('off')
+    
+    plt.subplot(122)
+    plt.title('transformed_image')
+    plt.imshow(transformed_image)
+    plt.axis('off')
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # 保存结果
+    result_rgb = cv2.cvtColor(transformed_image, cv2.COLOR_RGB2BGR)
+    cv2.imwrite("transformed_image.jpg", result_rgb)
+    print("变换后的图像已保存")
 
-    def estimate_depth(self, ref_image, source_image):
-        """主函数：估计深度图"""
-        # 1. 构建cost volume (直接使用图像强度)
-        cost_volume = self.build_cost_volume(ref_image, source_image)
-        
-        # 2. 深度回归
-        depth_map = self.depth_regression(cost_volume)
-        np.save("cost_volume.npy", cost_volume)
-        np.save("depth_image.npy", depth_map)
-        return depth_map
-
-# 使用示例
 if __name__ == "__main__":
-    # 相机参数
-    fx, fy = 360, 360  # 焦距
-    cx, cy = 360, 240  # 主点
-    
-    # 初始化
-    pss = PlaneSweepingStereo(fx, fy, cx, cy)
-    
-    # 读取图像
-    ref_image = cv2.imread('/home/clp/catkin_ws/src/sonar_cam_stereo/src/data/rgb_ref/rgb_0.png')
-    # ref_image = cv2.cvtColor(ref_image, cv2.COLOR_BGR2GRAY)
-    source_image = cv2.imread('/home/clp/catkin_ws/src/sonar_cam_stereo/src/data/rgb_source/rgb_0.png')
-    # source_image = cv2.cvtColor(source_image, cv2.COLOR_BGR2GRAY)
-    
-    # 估计深度
-    depth_map = pss.estimate_depth(ref_image, source_image)
-    
-    # 可视化
-    depth_viz = (depth_map - depth_map.min()) / (depth_map.max() - depth_map.min())
-    cv2.imshow('Depth Map', depth_viz)
-    cv2.waitKey(0)
+    main()

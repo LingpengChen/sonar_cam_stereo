@@ -9,13 +9,15 @@ class DataLoader:
         self.rgb_dir = os.path.join(self.base_dir, "rgb_ref")
         self.depth_dir = os.path.join(self.base_dir, "depth")
         self.pose_dir = os.path.join(self.base_dir, "pose")
-        self.sonar_dir = os.path.join(self.base_dir, "sonar_rect")
+        self.sonar_dir = os.path.join(self.base_dir, "sonar")
+        self.sonar_rect_dir = os.path.join(self.base_dir, "sonar_rect")
         
         # 获取所有文件列表
         self.rgb_files = sorted(os.listdir(self.rgb_dir))
         self.depth_files = sorted(os.listdir(self.depth_dir))
         self.pose_files = sorted(os.listdir(self.pose_dir))
         self.sonar_files = sorted(os.listdir(self.sonar_dir))
+        self.sonar_rect_files = sorted(os.listdir(self.sonar_rect_dir))
         
         # 检查文件数量是否匹配
         assert len(self.rgb_files) == len(self.depth_files) == len(self.pose_files) == len(self.sonar_files), \
@@ -46,7 +48,10 @@ class DataLoader:
         sonar_path = os.path.join(self.sonar_dir, self.sonar_files[idx])
         sonar = np.load(sonar_path)
         
-        return rgb, depth, pose, sonar
+        sonar_rect_path = os.path.join(self.sonar_rect_dir, self.sonar_rect_files[idx])
+        sonar_rect = np.load(sonar_rect_path)
+        
+        return rgb, depth, pose, sonar, sonar_rect
 
     def __len__(self):
         return self.num_frames
@@ -60,17 +65,21 @@ if __name__ == "__main__":
     loader = DataLoader(data_path)
     
     # 读取第一帧数据
-    rgb, depth, pose, sonar = loader.load_frame(0)
+    rgb, depth, pose, sonar, sonar_rect = loader.load_frame(0)
     
     # 打印数据信息
     print("RGB image shape:", rgb.shape)
     print("Depth image shape:", depth.shape)
     print("Pose matrix:\n", pose)
     print("Sonar image shape:", sonar.shape)
+    print("sonar_rect image shape:", sonar_rect.shape)
     
     # 可视化RGB图像
-    cv2.imshow("rgb", rgb)
-    cv2.imshow("sonar", np.flip(sonar, 0))
+    # cv2.imshow("rgb", rgb)
+    # cv2.imshow("sonar", np.flip(sonar, 0))
+    # cv2.imshow("sonar_rect", np.flip(sonar_rect, 0))
+    gray = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
+    cv2.imwrite("/home/clp/catkin_ws/src/sonar_cam_stereo/src/data/jpg/gray.jpg", gray)
     
     # 可视化深度图（归一化显示）
     from depth2sonar import visualize_depth
