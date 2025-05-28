@@ -1,0 +1,106 @@
+\section{Inverse Warping Mathematical Formulation}
+
+\subsection{1. Pixel to Camera Coordinates (pixel2cam)}
+Converting target view pixel coordinates to 3D points in camera coordinate system:
+
+\begin{equation}
+\begin{bmatrix} 
+X \\ Y \\ Z 
+\end{bmatrix} = 
+depth \cdot K^{-1} 
+\begin{bmatrix} 
+u \\ v \\ 1 
+\end{bmatrix}
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $(u,v)$ are pixel coordinates
+    \item $K^{-1}$ is inverse of camera intrinsic matrix
+    \item $depth$ is the depth value at corresponding pixel
+\end{itemize}
+
+\subsection{2. Projection Matrix Computation}
+Computing projection matrix from target camera coordinates to source pixel coordinates:
+
+\begin{equation}
+P = K_s[R|t]
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $K_s$ is source camera intrinsic matrix
+    \item $[R|t]$ is transformation matrix from target to source
+\end{itemize}
+
+\subsection{3. Camera to Pixel Projection (cam2pixel)}
+\subsubsection{Coordinate Transformation}
+\begin{equation}
+\begin{bmatrix} 
+X' \\ Y' \\ Z' 
+\end{bmatrix} = 
+R\begin{bmatrix} 
+X \\ Y \\ Z 
+\end{bmatrix} + t
+\end{equation}
+
+\subsubsection{Projection}
+\begin{equation}
+\begin{bmatrix} 
+u' \\ v' \\ 1 
+\end{bmatrix} = 
+K_s \begin{bmatrix} 
+X'/Z' \\ Y'/Z' \\ 1 
+\end{bmatrix}
+\end{equation}
+
+\subsubsection{Normalization}
+\begin{equation}
+x_{norm} = \frac{2u'}{W-1} - 1
+\end{equation}
+\begin{equation}
+y_{norm} = \frac{2v'}{H-1} - 1
+\end{equation}
+
+\subsection{4. Grid Sampling}
+Bilinear interpolation sampling for position $(x_{norm}, y_{norm})$:
+
+\begin{equation}
+V(x_{norm}, y_{norm}) = \sum_{q \in Q} V_q \prod_{i \in \{x,y\}} (1 - |x_i^{norm} - q_i|)
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $Q$ represents four nearest pixel points
+    \item $V_q$ is value on source feature map
+    \item Interpolation weights based on normalized coordinate differences
+\end{itemize}
+
+\subsection{Complete Transformation}
+\begin{equation}
+H = K_s[R|t]K_t^{-1}
+\end{equation}
+
+Final sampling coordinate computation:
+\begin{equation}
+\begin{bmatrix} 
+u_s \\ v_s \\ 1 
+\end{bmatrix} = 
+H \begin{bmatrix} 
+u_t \\ v_t \\ 1 
+\end{bmatrix}
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $(u_t,v_t)$ are pixel coordinates in target view
+    \item $(u_s,v_s)$ are corresponding sampling coordinates in source view
+\end{itemize}
+
+\section{Key Properties}
+\begin{enumerate}
+    \item \textbf{Differentiability}: All operations are differentiable
+    \item \textbf{Geometric Accuracy}: Maintains precise geometric relationships
+    \item \textbf{Feature Preservation}: Preserves feature characteristics
+    \item \textbf{Numerical Stability}: Handles numerical issues through normalization
+\end{enumerate}

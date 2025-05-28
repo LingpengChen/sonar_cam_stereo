@@ -1,20 +1,21 @@
-import os
-import cv2
+#!/usr/bin/env python
+import rospy
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
 import numpy as np
+import cv2
 
-    
-# 使用示例
-if __name__ == "__main__":
-    # 替换为你的数据目录路径
-    data_path = os.path.dirname(os.path.abspath(__file__)) + "/data"
-    
-    depth = np.load("/home/clp/catkin_ws/src/sonar_cam_stereo/src/depth_image.npy")
-    
-    # 可视化RGB图像
-    cv2.imshow("depth", depth)
-    
-    # 可视化深度图（归一化显示）
-    from depth2sonar import visualize_depth
-    cv2.imshow("Depth", visualize_depth(depth))
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+def image_callback(msg):
+    bridge = CvBridge()
+    cv_image = bridge.imgmsg_to_cv2(msg)
+    print("Image shape:", cv_image.shape)
+    cv2.imshow("test", cv_image)
+    cv2.waitKey(1)  # 正确的拼写
+
+def main():
+    rospy.init_node('image_shape_node')
+    rospy.Subscriber('/oculus/postprocess/drawn_sonar', Image, image_callback)
+    rospy.spin()
+
+if __name__ == '__main__':
+    main()

@@ -76,13 +76,14 @@ if __name__ == "__main__":
     
     # 可视化RGB图像
     # cv2.imshow("rgb", rgb)
-    # cv2.imshow("sonar", np.flip(sonar, 0))
-    # cv2.imshow("sonar_rect", np.flip(sonar_rect, 0))
-    gray = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
-    cv2.imwrite("/home/clp/catkin_ws/src/sonar_cam_stereo/src/data/jpg/gray.jpg", gray)
+    cv2.imshow("sonar", np.flip(sonar, 0))
+    cv2.imshow("sonar_rect", np.flip(sonar_rect, 0))
+    # gray = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
+    # cv2.imwrite("/home/clp/catkin_ws/src/sonar_cam_stereo/src/data/jpg/gray.jpg", gray)
     
     # 可视化深度图（归一化显示）
-    from depth2sonar import visualize_depth
-    cv2.imshow("Depth", visualize_depth(depth))
+    # from depth2sonar import visualize_depth
+    # cv2.imshow("Depth", visualize_depth(depth))
+    # cv2.imwrite("/home/clp/catkin_ws/src/sonar_cam_stereo/src/data/jpg/dapth.jpg", visualize_depth(depth))
     cv2.waitKey(0)
     cv2.destroyAllWindows()

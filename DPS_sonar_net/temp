@@ -1,0 +1,62 @@
+我的PSNet模型如下：
+dpsnet = PSNet(args.nlabel, args.mindepth).to(device)
+
+weights = torch.load(args.pretrained_dps)
+for key, value in weights['state_dict'].items():
+    print(f"{key}: {value.shape}")
+
+feature_extraction.firstconv.0.0.weight: torch.Size([32, 3, 3, 3])
+feature_extraction.firstconv.0.1.weight: torch.Size([32])
+...
+feature_extraction.layer1.0.conv1.0.0.weight: torch.Size([32, 32, 3, 3])
+...
+
+convs.6.0.weight: torch.Size([1, 32, 3, 3])
+...
+dres0.0.0.weight: torch.Size([32, 64, 3, 3, 3])
+...
+classify.0.0.weight: torch.Size([32, 32, 3, 3, 3])
+...
+classify.2.weight: torch.Size([1, 32, 3, 3, 3])
+
+feature_extraction
+
+
+现在，我改变了模型结构
+class PSNet(nn.Module):
+    def __init__(self):
+        super(PSNet, self).__init__()
+        我把 self.feature_extraction = feature_extraction()
+        变成了
+        self.rgb_feature_extraction = feature_extraction()
+        同时我加入了一个新的特征提取网络
+        self.sonar_feature_extraction = soanr_feature_extraction()
+        soanr_feature_extraction和feature_extraction的唯一区别在于self.firstconv的第一个conv操作不同，具体如下
+        class feature_extraction(nn.Module):
+        def __init__(self):
+            super(feature_extraction, self).__init__()
+            self.firstconv = nn.Sequential(convbn(3, 32, 3, 2, 1, 1),
+                                        nn.ReLU(inplace=True),
+                                        convbn(32, 32, 3, 1, 1, 1),
+                                        nn.ReLU(inplace=True),
+                                        convbn(32, 32, 3, 1, 1, 1),
+                                        nn.ReLU(inplace=True))
+        class soanr_feature_extraction(nn.Module):
+        def __init__(self):
+            super(soanr_feature_extraction, self).__init__()
+            self.inplanes = 32
+            self.firstconv = nn.Sequential(convbn(1, 32, 3, 2, 1, 1),
+                                        nn.ReLU(inplace=True),
+                                        convbn(32, 32, 3, 1, 1, 1),
+                                        nn.ReLU(inplace=True),
+                                        convbn(32, 32, 3, 1, 1, 1),
+                                        nn.ReLU(inplace=True))
+我希望你能把参数load进入新的模型，首先，我希望你把 feature_extraction load 进入 rgb_feature_extraction
+把feature_extraction除了firstconv部分也load进入soanr_feature_extraction
+请问如何修改如下代码：
+if args.pretrained_dps:
+        print("=> using pre-trained weights for DPSNet")
+        weights = torch.load(args.pretrained_dps)
+        dpsnet.load_state_dict(weights['state_dict'])
+    else:
+        dpsnet.init_weights()
