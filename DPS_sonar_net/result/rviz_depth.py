@@ -203,13 +203,12 @@ def main():
         depth_publisher = DepthPublisher(num_publishers)
         
         # Load depth images
-        est_depth_inv = np.load("/media/clp/Data1/workspace/DPSNet/result/0002.npy")
-        true_depth = np.load("/media/clp/Data1/workspace/DPSNet/dataset/test/mvs_test_00001/0002.npy")
+        est_depth = np.load("/home/clp/catkin_ws/src/sonar_cam_stereo/DPS_sonar_net/result/0003.npy")
+        true_depth = np.load("/home/clp/catkin_ws/src/sonar_cam_stereo/DPS_sonar_net/result/0003_gt.npy")
+        # true_depth = np.load("/home/clp/catkin_ws/src/sonar_cam_stereo/DPS_sonar_net/dataset/test/flatiron_16233051862684293/depth.npy")
         # est_depth_inv = np.load("/media/clp/Data1/workspace/DPSNet/result/0000.npy")
         # true_depth = np.load("/media/clp/Data1/workspace/DPSNet/dataset/test/mvs_test_00000/0000.npy")
-        est_depth = 32 / est_depth_inv
         # est_depth = est_depth_inv
-        true_depth = true_depth
         # true_depth2 = 32 / true_depth_inv
 
         # Create dictionary mapping publisher index to depth data

@@ -1,5 +1,7 @@
 /src/data/
 /src/sweep/result_*
 /DPS_sonar_net/checkpoints
-/DPS_sonar_net/dataset/test/
-/DPS_sonar_net/dataset/train/
+/DPS_sonar_net/dataset
+/DPS_sonar_net/result_
+/DPS_sonar_net/result
+/DPS_sonar_net/pretrained

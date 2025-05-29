@@ -80,14 +80,14 @@ def tensor2array(tensor, max_value=255, colormap='rainbow'):
         #array = 0.5 + tensor.numpy()*0.5
         array = 0.5 + tensor.numpy().transpose(1,2,0)*0.5
     
-    # Pre-resize to avoid TensorboardX's PIL resize
-    # This uses OpenCV instead of PIL
-    h, w = array.shape[:2]
-    max_dim = 400  # TensorboardX's default max dimension
-    if max(h, w) > max_dim:
-        scale = max_dim / max(h, w)
-        new_h, new_w = int(h * scale), int(w * scale)
-        array = cv2.resize(array, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    # # Pre-resize to avoid TensorboardX's PIL resize
+    # # This uses OpenCV instead of PIL
+    # h, w = array.shape[:2]
+    # max_dim = 400  # TensorboardX's default max dimension
+    # if max(h, w) > max_dim:
+    #     scale = max_dim / max(h, w)
+    #     new_h, new_w = int(h * scale), int(w * scale)
+    #     array = cv2.resize(array, (new_w, new_h), interpolation=cv2.INTER_AREA)
         
     return array
 
