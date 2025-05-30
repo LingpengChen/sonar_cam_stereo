@@ -39,13 +39,15 @@ parser.add_argument('-b', '--batch-size', default=1, type=int,
                     metavar='N', help='mini-batch size')
 # parser.add_argument('--pretrained-dps', dest='pretrained_dps', default="./pretrained/dpsnet.pth.tar", metavar='PATH', help='path to pre-trained dpsnet model')
 # parser.add_argument('--pretrained-dps', dest='pretrained_dps', default="./checkpoints/sonar_cam_stereo_dataset/05-28-20:05/dpsnet_0_checkpoint.pth.tar", metavar='PATH', help='path to pre-trained dpsnet model')
-parser.add_argument('--pretrained-dps', dest='pretrained_dps', default="./checkpoints/sonar_cam_stereo_dataset/05-29-01:29/dpsnet_1_checkpoint.pth.tar", metavar='PATH', help='path to pre-trained dpsnet model')
+# parser.add_argument('--pretrained-dps', dest='pretrained_dps', default="./checkpoints/sonar_cam_stereo_dataset/05-29-01:29/dpsnet_1_checkpoint.pth.tar", metavar='PATH', help='path to pre-trained dpsnet model')
+parser.add_argument('--pretrained-dps', dest='pretrained_dps', default="./pretrained/dpsnet_106_48_16_2epoch_checkpoint.pth.tar", metavar='PATH', help='path to pre-trained dpsnet model')
 # parser.add_argument('--seed', default=0, type=int, help='seed for random functions, and network initialization')
 parser.add_argument('--output-dir', default='test_result', type=str, help='Output directory for saving predictions in a big 3D numpy file')
 parser.add_argument('--ttype', default='test.txt', type=str, help='Text file indicates input data')
 
 parser.add_argument('--label_factor', type=int ,default=1.06, help='label factors, depth of i th pseudo plane = label_factor**i')
 parser.add_argument('--nlabel', type=int ,default=48, help='number of label')
+parser.add_argument('--alpha', type=int ,default=60, help='angle of pseudo w.r.t the principal axis (degree)')
 parser.add_argument('--mindepth', type=float ,default=1, help='minimum depth')
 parser.add_argument('--maxdepth', type=float ,default=16, help='minimum depth')
 
@@ -74,13 +76,15 @@ def main():
 
     nlabel = args.nlabel
     mindepth = args.mindepth
+    label_factor = args.label_factor
+    alpha = args.alpha
+    dpsnet = PSNet(nlabel, mindepth, label_factor, alpha).to(device)
     
-    dpsnet = PSNet(nlabel, mindepth).to(device)
-    # pretrained_model_path = "./pretrained/dpsnet_updated.pth.tar"
     pretrained_model_path = args.pretrained_dps
     weights = torch.load(pretrained_model_path)
     dpsnet.load_state_dict(weights['state_dict'])
     dpsnet.eval()
+    print(f"Successfully load model from: {pretrained_model_path}")
 
     output_dir= Path("result")
     if not os.path.isdir(output_dir):

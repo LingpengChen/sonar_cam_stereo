@@ -16,10 +16,10 @@ def convtext(in_planes, out_planes, kernel_size = 3, stride = 1, dilation = 1):
     )
 
 class PSNet(nn.Module):
-    def __init__(self, nlabel=32, mindepth=1, alpha=60):
+    def __init__(self, nlabel=32, mindepth=1, label_factor=1.06, alpha=60):
         super(PSNet, self).__init__()
         self.nlabel = nlabel
-        self.label_factor = 1.06
+        self.label_factor = label_factor
         self.mindepth = mindepth
         self.depths = torch.tensor([mindepth * self.label_factor**i for i in range(nlabel)])
         # 将 alpha 转换为张量

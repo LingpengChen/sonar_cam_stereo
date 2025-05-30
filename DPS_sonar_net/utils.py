@@ -76,20 +76,40 @@ def tensor2array(tensor, max_value=255, colormap='rainbow'):
             array = (tensor.expand(tensor.size(0), tensor.size(1), 3).numpy()/max_value).clip(0,1)
 
     elif tensor.ndimension() == 3:
-        #assert(tensor.size(0) == 3)
-        #array = 0.5 + tensor.numpy()*0.5
+     
         array = 0.5 + tensor.numpy().transpose(1,2,0)*0.5
-    
-    # # Pre-resize to avoid TensorboardX's PIL resize
-    # # This uses OpenCV instead of PIL
-    # h, w = array.shape[:2]
-    # max_dim = 400  # TensorboardX's default max dimension
-    # if max(h, w) > max_dim:
-    #     scale = max_dim / max(h, w)
-    #     new_h, new_w = int(h * scale), int(w * scale)
-    #     array = cv2.resize(array, (new_w, new_h), interpolation=cv2.INTER_AREA)
         
     return array
+
+def sonar_tensor2array(tensor, max_value=1.0):
+    """
+    将单通道张量转换为灰度图像数组，用于TensorBoard可视化
+    """
+    if max_value is None:
+        max_value = tensor.max()
+    
+    # 处理单通道图像(声纳图像)
+    if tensor.ndimension() == 2 or tensor.size(0) == 1:
+        # 将张量压缩并归一化到0-1范围
+        array = tensor.squeeze().numpy() / max_value
+        array = array.clip(0, 1)
+        
+        # 将单通道图像转为三通道灰度图(HWC格式)
+        # TensorBoard要求图像为RGB格式，即使是灰度图也需要3个通道
+        h, w = array.shape
+        rgb_array = np.zeros((h, w, 3), dtype=np.float32)
+        rgb_array[:, :, 0] = array
+        rgb_array[:, :, 1] = array
+        rgb_array[:, :, 2] = array
+        
+        return rgb_array
+    
+    # 处理RGB图像
+    elif tensor.ndimension() == 3 and tensor.size(0) == 3:
+        array = 0.5 + tensor.numpy().transpose(1, 2, 0) * 0.5
+        return array
+        
+    return None
 
 
 def save_checkpoint(save_path, dpsnet_state, epoch, filename='checkpoint.pth.tar'):

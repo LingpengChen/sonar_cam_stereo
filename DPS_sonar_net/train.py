@@ -18,7 +18,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data
 import custom_transforms
-from utils import tensor2array, save_checkpoint, save_path_formatter, adjust_learning_rate
+from utils import tensor2array, sonar_tensor2array, save_checkpoint, save_path_formatter, adjust_learning_rate
 from loss_functions import compute_errors_train
 
 from logger import TermLogger, AverageMeter
@@ -57,26 +57,32 @@ parser.add_argument('--print-freq', default=10, type=int,
                     metavar='N', help='print frequency')
 parser.add_argument('-e', '--evaluate', dest='evaluate', default=True,
                     help='evaluate model on validation set')
-# parser.add_argument('--pretrained-dps', dest='pretrained_dps', default=None, metavar='PATH',
-#                     help='path to pre-trained dispnet model')
-parser.add_argument('--pretrained-dps', dest='pretrained_dps', default="./pretrained/dpsnet_10632_checkpoint.pth.tar", metavar='PATH',
-                    help='path to pre-trained dpsnet model')
-# parser.add_argument('--pretrained-dps', dest='pretrained_dps', default="./pretrained/dpsnet_updated.pth.tar", metavar='PATH',
-#                     help='path to pre-trained dpsnet model')
+# parser.add_argument('--pretrained-dps', dest='pretrained_dps', default=None, metavar='PATH', help='path to pre-trained dispnet model')
+parser.add_argument('--pretrained-dps', dest='pretrained_dps', default="./checkpoints/sonar_cam_stereo_dataset/05-30-01:37/dpsnet_0_checkpoint.pth.tar", metavar='PATH', help='path to pre-trained dpsnet model')
+# parser.add_argument('--pretrained-dps', dest='pretrained_dps', default="./pretrained/dpsnet_106_48_16_2epoch_checkpoint.pth.tar", metavar='PATH', help='path to pre-trained dpsnet model')
+
 parser.add_argument('--seed', default=0, type=int, help='seed for random functions, and network initialization')
+
 parser.add_argument('--log-summary', default='progress_log_summary.csv', metavar='PATH',
                     help='csv where to save per-epoch train and valid stats')
-parser.add_argument('--log-full', default='progress_log_full.csv', metavar='PATH',
+parser.add_argument('--log-full-train', default='progress_log_full_train.csv', metavar='PATH',
                     help='csv where to save per-gradient descent train stats')
-parser.add_argument('--log-output', action='store_true', help='will log dispnet outputs and warped imgs at validation step')
+parser.add_argument('--log-full-val', default='progress_log_full_val.csv', metavar='PATH',
+                    help='csv where to save per-gradient descent train stats')
+
+# parser.add_argument('--log-output', action='store_true', help='will log dispnet outputs and warped imgs at validation step')
+parser.add_argument('--log-output', default=True, help='will log dispnet outputs and warped imgs at validation step')
 parser.add_argument('--ttype', default='train.txt', type=str, help='Text file indicates input data')
 parser.add_argument('--ttype2', default='val.txt', type=str, help='Text file indicates input data')
 parser.add_argument('-f', '--training-output-freq', type=int, help='frequence for outputting dispnet outputs and warped imgs at training for all scales if 0 will not output',
                     metavar='N', default=100)
+
+parser.add_argument('--label_factor', type=int ,default=1.06, help='label factors, depth of i th pseudo plane = label_factor**i')
 parser.add_argument('--nlabel', type=int ,default=48, help='number of label')
+parser.add_argument('--alpha', type=int ,default=60, help='angle of pseudo w.r.t the principal axis (degree)')
 parser.add_argument('--mindepth', type=float ,default=1, help='minimum depth')
-parser.add_argument('--maxdepth', type=float ,default=16, help='minimum depth')
-# parser.add_argument('--nlabel', type=int ,default=32, help='number of label')
+parser.add_argument('--maxdepth', type=float ,default=15, help='minimum depth')
+
 # parser.add_argument('--nlabel', type=int ,default=32, help='number of label')
 # parser.add_argument('--mindepth', type=float ,default=1, help='minimum depth')
 # parser.add_argument('--maxdepth', type=float ,default=6.5, help='minimum depth')
@@ -143,73 +149,25 @@ def main():
     # create model
     print("=> creating model")
 
-    dpsnet = PSNet(args.nlabel, args.mindepth).to(device)
+    nlabel = args.nlabel
+    mindepth = args.mindepth
+    label_factor = args.label_factor
+    alpha = args.alpha
+    dpsnet = PSNet(nlabel, mindepth, label_factor, alpha).to(device)
 
-    weights = torch.load(args.pretrained_dps)
-    for key, value in weights['state_dict'].items():
-        print(f"{key}: {value.shape}")
+    # weights = torch.load(args.pretrained_dps)
+    # for key, value in weights['state_dict'].items():
+    #     print(f"{key}: {value.shape}")
         
     if args.pretrained_dps:
         print("=> using pre-trained weights for DPSNet")
         weights = torch.load(args.pretrained_dps)
         dpsnet.load_state_dict(weights['state_dict'])
+        print(f"Successfully load model from: {args.pretrained_dps}")
+        
     else:
         dpsnet.init_weights()
     
-    
-    # if args.pretrained_dps:
-    #     print("=> using pre-trained weights for DPSNet")
-    #     weights = torch.load(args.pretrained_dps)
-        
-    #     # 创建新的state_dict用于加载
-    #     new_state_dict = {}
-        
-    #     # 遍历原始权重
-    #     for key, value in weights['state_dict'].items():
-    #         # 处理rgb_feature_extraction部分
-    #         if key.startswith('feature_extraction.'):
-    #             new_key = key.replace('feature_extraction.', 'rgb_feature_extraction.')
-    #             new_state_dict[new_key] = value
-                
-    #         # 处理sonar_feature_extraction部分，但排除firstconv的第一个卷积层
-    #         if key.startswith('feature_extraction.') and not key.startswith('feature_extraction.firstconv.0.0'):
-    #             new_key = key.replace('feature_extraction.', 'sonar_feature_extraction.')
-    #             new_state_dict[new_key] = value
-                
-    #         # 加载其他非特征提取部分的参数
-    #         if not key.startswith('feature_extraction.'):
-    #             new_state_dict[key] = value
-        
-    #     # 使用严格=False模式加载，允许缺少一些参数
-    #     dpsnet.load_state_dict(new_state_dict, strict=False)
-    #     print("=> selectively loaded pre-trained weights")
-        
-    #     # 打印未加载的参数
-    #     model_dict = dpsnet.state_dict()
-    #     missing_keys = [k for k in model_dict.keys() if k not in new_state_dict]
-    #     if missing_keys:
-    #         print("=> following keys are not initialized from pretrained model:")
-    #         for k in missing_keys:
-    #             print(k)
-        
-    #     # 明确初始化sonar特征提取网络的第一层卷积及其BatchNorm
-    #     print("=> explicitly initializing sonar_feature_extraction.firstconv.0.0.weight with Kaiming")
-    #     # 初始化卷积权重（使用Kaiming初始化，更适合ReLU网络）
-    #     nn.init.kaiming_normal_(dpsnet.sonar_feature_extraction.firstconv[0][0].weight, mode='fan_out', nonlinearity='relu')
-    #     if hasattr(dpsnet.sonar_feature_extraction.firstconv[0][0], 'bias') and dpsnet.sonar_feature_extraction.firstconv[0][0].bias is not None:
-    #         nn.init.constant_(dpsnet.sonar_feature_extraction.firstconv[0][0].bias, 0)
-
-    #     # 初始化BatchNorm参数
-    #     print("=> explicitly initializing sonar_feature_extraction.firstconv.0.1 (BatchNorm)")
-    #     nn.init.constant_(dpsnet.sonar_feature_extraction.firstconv[0][1].weight, 1.0)
-    #     nn.init.constant_(dpsnet.sonar_feature_extraction.firstconv[0][1].bias, 0.0)
-    #     # running_mean和running_var在训练过程中会自动更新，初始值设为0和1
-    #     dpsnet.sonar_feature_extraction.firstconv[0][1].running_mean.zero_()
-    #     dpsnet.sonar_feature_extraction.firstconv[0][1].running_var.fill_(1.0)
-    # else:
-    #     dpsnet.init_weights()
-    
-
     cudnn.benchmark = True
     dpsnet = torch.nn.DataParallel(dpsnet)
 
@@ -224,27 +182,31 @@ def main():
         writer = csv.writer(csvfile, delimiter='\t')
         writer.writerow(['train_loss', 'validation_loss'])
 
-    with open(args.save_path/args.log_full, 'w') as csvfile:
+    with open(args.save_path/args.log_full_train, 'w') as csvfile:
         writer = csv.writer(csvfile, delimiter='\t')
         writer.writerow(['train_loss'])
+        
+    with open(args.save_path/args.log_full_val, 'w') as csvfile:
+        writer = csv.writer(csvfile, delimiter='\t')
+        writer.writerow(['n_iter', 'abs_rel', 'abs_diff', 'sq_rel'])
 
 
     for epoch in range(args.epochs):
-        print("EPOCH: {}", epoch)
+        print(f"EPOCH: {epoch}")
         adjust_learning_rate(args, optimizer, epoch)
 
-        # train for one epoch
-        train_loss = train(args, train_loader, dpsnet, optimizer, args.epoch_size, training_writer)
-        save_checkpoint(
-            args.save_path, {
-                'epoch': epoch + 1,
-                'state_dict': dpsnet.module.state_dict()
-            },
-            epoch)
+        # # train for one epoch
+        # train_loss = train(args, train_loader, dpsnet, optimizer, args.epoch_size, training_writer)
+        # save_checkpoint(
+        #     args.save_path, {
+        #         'epoch': epoch + 1,
+        #         'state_dict': dpsnet.module.state_dict()
+        #     },
+        #     epoch)
         
         errors, error_names = validate_with_gt(args, val_loader, dpsnet, epoch, output_writers)
 
-        error_string = ', '.join('{} : {:.3f}'.format(name, error) for name, error in zip(error_names, errors))
+        # error_string = ', '.join('{} : {:.3f}'.format(name, error) for name, error in zip(error_names, errors))
 
         for error, name in zip(errors, error_names):
             training_writer.add_scalar(name, error, epoch)
@@ -252,9 +214,9 @@ def main():
         # Up to you to chose the most relevant error to measure your model's performance, careful some measures are to maximize (such as a1,a2,a3)
         decisive_error = errors[0]
 
-        with open(args.save_path/args.log_summary, 'a') as csvfile:
-            writer = csv.writer(csvfile, delimiter='\t')
-            writer.writerow([train_loss, decisive_error])
+        # with open(args.save_path/args.log_summary, 'a') as csvfile:
+        #     writer = csv.writer(csvfile, delimiter='\t')
+        #     writer.writerow([train_loss, decisive_error])
         
         print()
 
@@ -303,7 +265,7 @@ def train(args, train_loader, dpsnet: PSNet, optimizer, epoch_size, train_writer
         if args.training_output_freq > 0 and n_iter % args.training_output_freq == 0:
 
             train_writer.add_image('train rgb image input', tensor2array(rgb_img[0]), n_iter, dataformats='HWC')
-            train_writer.add_image('train sonar image input', tensor2array(sonar_rect_img[0]), n_iter, dataformats='HWC')
+            train_writer.add_image('train sonar image input', sonar_tensor2array(sonar_rect_img[0]), n_iter, dataformats='HWC')
             
             depth_to_show = depth_gt_var.data[0].cpu()
             depth_to_show[depth_to_show > args.maxdepth] = 0
@@ -312,7 +274,7 @@ def train(args, train_loader, dpsnet: PSNet, optimizer, epoch_size, train_writer
                                    n_iter, dataformats='HWC')
 
             train_writer.add_image('train Depth Output Normalized',
-                                    tensor2array(depths[1].data[0].cpu(), max_value=args.nlabel*args.maxdepth),
+                                    tensor2array(depths[1].data[0].cpu(), max_value=args.maxdepth),
                                     n_iter, dataformats='HWC')
 
         # record loss and EPE
@@ -327,7 +289,7 @@ def train(args, train_loader, dpsnet: PSNet, optimizer, epoch_size, train_writer
         batch_time.update(time.time() - end)
         end = time.time()
 
-        with open(args.save_path/args.log_full, 'a') as csvfile:
+        with open(args.save_path/args.log_full_train, 'a') as csvfile:
             writer = csv.writer(csvfile, delimiter='\t')
             writer.writerow([loss.item()])
         # if i % args.print_freq == 0:
@@ -372,24 +334,27 @@ def validate_with_gt(args, val_loader, dpsnet, epoch, output_writers=[]):
 
             output = torch.squeeze(output_depth.data.cpu(),1)
 
-            if log_outputs and i % 100 == 0 and i/100 < len(output_writers):
+            if log_outputs and i % 100 == 0:
                 index = int(i//100)
-                if epoch == 0:
-                    output_writers[index].add_image('val Input', tensor2array(rgb_img[0]), 0, dataformats='HWC')
-                    depth_to_show = depth_gt_var.data[0].cpu()
-                    depth_to_show[depth_to_show > args.maxdepth] = 0
+                val_iter = 1000*n_iter + index
+                output_writers[index].add_image('val rgb Input', tensor2array(rgb_img[0]), val_iter, dataformats='HWC')
+                output_writers[index].add_image('val sonar Input', sonar_tensor2array(sonar_rect_img[0]), val_iter, dataformats='HWC')
+                depth_to_show = depth_gt_var.data[0].cpu()
+                depth_to_show[depth_to_show > args.maxdepth] = 0
+                output_writers[index].add_image('val target Depth Normalized', tensor2array(depth_to_show, max_value=args.maxdepth), val_iter, dataformats='HWC')
 
-                    output_writers[index].add_image('val target Depth Normalized', tensor2array(depth_to_show, max_value=args.maxdepth), epoch, dataformats='HWC')
-
-                output_writers[index].add_image('val Depth Output', tensor2array(output_depth.data[0].cpu(), max_value=args.maxdepth*0.3), epoch, dataformats='HWC')
-
+                output_writers[index].add_image('val Depth Output', tensor2array(output_depth.data[0].cpu(), max_value=args.maxdepth), val_iter, dataformats='HWC')
+          
             errors.update(compute_errors_train(depth_gt, output, mask))
 
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
-            # if i % args.print_freq == 0:
-            #     print('valid: Time {} Abs Error {:.4f} ({:.4f})'.format(batch_time, errors.val[0], errors.avg[0]))
+            
+            with open(args.save_path/args.log_full_val, 'a') as csvfile:
+                writer = csv.writer(csvfile, delimiter='\t')
+                # writer.writerow([x.item() for x in errors.val])
+                writer.writerow([n_iter] + [round(x.item(), 4) for x in errors.val[:3]])
             
             pbar.set_postfix(abs_error=f"{errors.val[0]:.4f}")
 
