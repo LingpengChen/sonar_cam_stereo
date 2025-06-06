@@ -4,27 +4,69 @@ from torch import nn
 import numpy as np
 
 def compute_errors_test(gt, pred):
-    gt = gt.numpy()
-    pred = pred.numpy()
-    thresh = np.maximum((gt / pred), (pred / gt))
-    a1 = (thresh < 1.25   ).mean()
-    a2 = (thresh < 1.25 ** 2).mean()
-    a3 = (thresh < 1.25 ** 3).mean()
-
-    rmse = (gt - pred) ** 2
-    rmse = np.sqrt(rmse.mean())
-
-    rmse_log = (np.log(gt) - np.log(pred)) ** 2
-    rmse_log = np.sqrt(rmse_log.mean())
-
-    abs_diff = np.mean(np.abs(gt - pred))
-    abs_rel = np.mean(np.abs(gt - pred) / gt)
-
-    sq_rel = np.mean(((gt - pred)**2) / gt)
-
-    return abs_rel, abs_diff, sq_rel, rmse, rmse_log, a1, a2, a3
+    '''
+    计算测试误差，考虑GT中值为0的无效区域
+    参数:
+        gt: 真实深度值
+        pred: 预测深度值
+    返回:
+        abs_rel: 相对绝对误差
+        abs_diff: 绝对误差
+        sq_rel: 相对平方误差
+        rmse: 均方根误差
+        rmse_log: 对数空间的均方根误差
+        a1, a2, a3: 阈值准确度
+    '''
+    abs_diff, abs_rel, sq_rel, rmse, rmse_log, a1, a2, a3 = 0, 0, 0, 0, 0, 0, 0, 0
+    batch_size = gt.size(0)
+    
+    for current_gt, current_pred in zip(gt, pred):
+        # 创建有效区域掩码：GT中不为0的区域
+        valid_mask = current_gt > 0
+        
+        valid_gt = current_gt[valid_mask]
+        valid_pred = current_pred[valid_mask]
+        
+        if len(valid_gt) == 0:
+            continue
+        else:
+            # 阈值准确度计算
+            thresh = torch.max((valid_gt / valid_pred), (valid_pred / valid_gt))
+            a1 += (thresh < 1.25).float().mean()
+            a2 += (thresh < 1.25 ** 2).float().mean()
+            a3 += (thresh < 1.25 ** 3).float().mean()
+            
+            # 误差计算
+            abs_diff += torch.mean(torch.abs(valid_gt - valid_pred))
+            abs_rel += torch.mean(torch.abs(valid_gt - valid_pred) / valid_gt)
+            sq_rel += torch.mean(((valid_gt - valid_pred)**2) / valid_gt)
+            
+            # RMSE计算
+            rmse_val = (valid_gt - valid_pred) ** 2
+            rmse += torch.sqrt(torch.mean(rmse_val))
+            
+            # RMSE log计算
+            rmse_log_val = (torch.log(valid_gt) - torch.log(valid_pred)) ** 2
+            rmse_log += torch.sqrt(torch.mean(rmse_log_val))
+    
+    # 按照compute_errors_train的做法，使用batch_size作为除数
+    return [float(metric / batch_size) for metric in [abs_rel, abs_diff, sq_rel, rmse, rmse_log, a1, a2, a3]]
 
 def compute_errors_train(gt, pred, valid):
+    '''
+        # 阈值准确度
+        thresh = max(gt/pred, pred/gt) < threshold  closer to 1 is better, less to 1 too much is worse 
+
+        # 绝对误差
+        abs_diff = |gt - pred|
+
+        # 相对绝对误差
+        abs_rel = |gt - pred| / gt
+
+        # 相对平方误差
+        sq_rel = (gt - pred)² / gt
+    '''
+
     abs_diff, abs_rel, sq_rel, a1, a2, a3 = 0,0,0,0,0,0
     batch_size = gt.size(0)
 
@@ -36,13 +78,13 @@ def compute_errors_train(gt, pred, valid):
             continue
         else:
             thresh = torch.max((valid_gt / valid_pred), (valid_pred / valid_gt))
-            a1 += (thresh < 1.25).float().mean()
-            a2 += (thresh < 1.25 ** 2).float().mean()
-            a3 += (thresh < 1.25 ** 3).float().mean()
+            a1 += (thresh < 1.1).float().mean()
+            a2 += (thresh < 1.1 ** 2).float().mean()
+            a3 += (thresh < 1.1 ** 3).float().mean()
 
             abs_diff += torch.mean(torch.abs(valid_gt - valid_pred))
             abs_rel += torch.mean(torch.abs(valid_gt - valid_pred) / valid_gt)
 
             sq_rel += torch.mean(((valid_gt - valid_pred)**2) / valid_gt)
 
-    return [metric / batch_size for metric in [abs_rel, abs_diff, sq_rel, a1, a2, a3]]
+    return [float(metric / batch_size)for metric in [abs_rel, abs_diff, sq_rel, a1, a2, a3]]

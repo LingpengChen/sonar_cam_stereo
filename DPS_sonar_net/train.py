@@ -37,12 +37,12 @@ parser = argparse.ArgumentParser(description='Structure from Motion Learner trai
 parser.add_argument('--data', metavar='DIR', default="/media/clp/9CB0E82FB0E81196/Stereo_dataset/FLsea_vi/sonar_cam_stereo_dataset/", help='path to dataset')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers')
-parser.add_argument('--epochs', default=10, type=int, metavar='N',
+parser.add_argument('--epochs', default=100, type=int, metavar='N',
                     help='number of total epochs to run')
-parser.add_argument('--epoch-size', default=0, type=int, metavar='N',
+parser.add_argument('--epoch-size', default=500, type=int, metavar='N',
                     help='manual epoch size (will match dataset size if not set)')
 
-parser.add_argument('-b', '--batch-size', default=3, type=int,
+parser.add_argument('-b', '--batch-size', default=2, type=int,
                     metavar='N', help='mini-batch size')
 
 parser.add_argument('--lr', '--learning-rate', default=2e-4, type=float,
@@ -58,8 +58,9 @@ parser.add_argument('--print-freq', default=10, type=int,
 parser.add_argument('-e', '--evaluate', dest='evaluate', default=True,
                     help='evaluate model on validation set')
 # parser.add_argument('--pretrained-dps', dest='pretrained_dps', default=None, metavar='PATH', help='path to pre-trained dispnet model')
-parser.add_argument('--pretrained-dps', dest='pretrained_dps', default="./checkpoints/sonar_cam_stereo_dataset/05-30-01:37/dpsnet_0_checkpoint.pth.tar", metavar='PATH', help='path to pre-trained dpsnet model')
+# parser.add_argument('--pretrained-dps', dest='pretrained_dps', default="./checkpoints/sonar_cam_stereo_dataset/05-30-01:37/dpsnet_0_checkpoint.pth.tar", metavar='PATH', help='path to pre-trained dpsnet model')
 # parser.add_argument('--pretrained-dps', dest='pretrained_dps', default="./pretrained/dpsnet_106_48_16_2epoch_checkpoint.pth.tar", metavar='PATH', help='path to pre-trained dpsnet model')
+parser.add_argument('--pretrained-dps', dest='pretrained_dps', default="./checkpoints/sonar_cam_stereo_dataset/06-03-12:38/dpsnet_10_checkpoint.pth.tar", metavar='PATH', help='path to pre-trained dpsnet model')
 
 parser.add_argument('--seed', default=0, type=int, help='seed for random functions, and network initialization')
 
@@ -78,14 +79,10 @@ parser.add_argument('-f', '--training-output-freq', type=int, help='frequence fo
                     metavar='N', default=100)
 
 parser.add_argument('--label_factor', type=int ,default=1.06, help='label factors, depth of i th pseudo plane = label_factor**i')
-parser.add_argument('--nlabel', type=int ,default=48, help='number of label')
+parser.add_argument('--nlabel', type=int ,default=64, help='number of label')
 parser.add_argument('--alpha', type=int ,default=60, help='angle of pseudo w.r.t the principal axis (degree)')
-parser.add_argument('--mindepth', type=float ,default=1, help='minimum depth')
-parser.add_argument('--maxdepth', type=float ,default=15, help='minimum depth')
-
-# parser.add_argument('--nlabel', type=int ,default=32, help='number of label')
-# parser.add_argument('--mindepth', type=float ,default=1, help='minimum depth')
-# parser.add_argument('--maxdepth', type=float ,default=6.5, help='minimum depth')
+parser.add_argument('--mindepth', type=float ,default=0.5, help='minimum depth')
+parser.add_argument('--maxdepth', type=float ,default=20, help='minimum depth')
 
 n_iter = 0
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -102,18 +99,15 @@ def main():
     args.save_path.makedirs_p()
     torch.manual_seed(args.seed)
 
-    training_writer = SummaryWriter(args.save_path)
-    output_writers = []
-    if args.log_output:
-        for i in range(3):
-            output_writers.append(SummaryWriter(args.save_path/'valid'/str(i)))
+    training_writer = SummaryWriter(args.save_path/'train')
+    output_writer = SummaryWriter(args.save_path/'valid')
+    output_writer2 = SummaryWriter(args.save_path/'valid')
     ####################################################
 
     # Data loading code
     normalize = custom_transforms.Normalize(mean=0.5, std=0.5, gamma=0.3) # normalized_value = (x - mean) / std
 
     train_transform = custom_transforms.Compose([
-        # custom_transforms.RandomScaleCrop(),
         custom_transforms.ArrayToTensor(),
         normalize
     ])
@@ -136,9 +130,11 @@ def main():
 
     print('{} samples found in {} train scenes'.format(len(train_set), len(train_set.scenes)))
     print('{} samples found in {} valid scenes'.format(len(val_set), len(val_set.scenes)))
+    
     train_loader = torch.utils.data.DataLoader(
         train_set, batch_size=args.batch_size, shuffle=True,
         num_workers=args.workers, pin_memory=True)
+    
     val_loader = torch.utils.data.DataLoader(
         val_set, batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
@@ -188,23 +184,23 @@ def main():
         
     with open(args.save_path/args.log_full_val, 'w') as csvfile:
         writer = csv.writer(csvfile, delimiter='\t')
-        writer.writerow(['n_iter', 'abs_rel', 'abs_diff', 'sq_rel'])
+        writer.writerow(['n_iter', 'abs_rel', 'abs_diff', 'sq_rel', 'a1', 'a2', 'a3'])
 
 
     for epoch in range(args.epochs):
         print(f"EPOCH: {epoch}")
         adjust_learning_rate(args, optimizer, epoch)
 
-        # # train for one epoch
-        # train_loss = train(args, train_loader, dpsnet, optimizer, args.epoch_size, training_writer)
-        # save_checkpoint(
-        #     args.save_path, {
-        #         'epoch': epoch + 1,
-        #         'state_dict': dpsnet.module.state_dict()
-        #     },
-        #     epoch)
+        # train for one epoch
+        train_loss = train(args, train_loader, dpsnet, optimizer, args.epoch_size, training_writer)
+        save_checkpoint(
+            args.save_path, {
+                'epoch': epoch + 1,
+                'state_dict': dpsnet.module.state_dict()
+            },
+            epoch)
         
-        errors, error_names = validate_with_gt(args, val_loader, dpsnet, epoch, output_writers)
+        errors, error_names = validate_with_gt(args, val_loader, dpsnet, epoch, output_writer)
 
         # error_string = ', '.join('{} : {:.3f}'.format(name, error) for name, error in zip(error_names, errors))
 
@@ -214,9 +210,9 @@ def main():
         # Up to you to chose the most relevant error to measure your model's performance, careful some measures are to maximize (such as a1,a2,a3)
         decisive_error = errors[0]
 
-        # with open(args.save_path/args.log_summary, 'a') as csvfile:
-        #     writer = csv.writer(csvfile, delimiter='\t')
-        #     writer.writerow([train_loss, decisive_error])
+        with open(args.save_path/args.log_summary, 'a') as csvfile:
+            writer = csv.writer(csvfile, delimiter='\t')
+            writer.writerow([train_loss, decisive_error])
         
         print()
 
@@ -262,20 +258,20 @@ def train(args, train_loader, dpsnet: PSNet, optimizer, epoch_size, train_writer
         if i > 0 and n_iter % args.print_freq == 0:
             train_writer.add_scalar('total_loss', loss.item(), n_iter)
 
-        if args.training_output_freq > 0 and n_iter % args.training_output_freq == 0:
+        # if args.training_output_freq > 0 and n_iter % args.training_output_freq == 0:
 
-            train_writer.add_image('train rgb image input', tensor2array(rgb_img[0]), n_iter, dataformats='HWC')
-            train_writer.add_image('train sonar image input', sonar_tensor2array(sonar_rect_img[0]), n_iter, dataformats='HWC')
+        #     train_writer.add_image('train rgb image input', tensor2array(rgb_img[0]), n_iter, dataformats='HWC')
+        #     train_writer.add_image('train sonar image input', sonar_tensor2array(sonar_rect_img[0]), n_iter, dataformats='HWC')
             
-            depth_to_show = depth_gt_var.data[0].cpu()
-            depth_to_show[depth_to_show > args.maxdepth] = 0
-            train_writer.add_image('train Depth GT Normalized',
-                                   tensor2array(depth_to_show, max_value=args.maxdepth),
-                                   n_iter, dataformats='HWC')
+        #     depth_to_show = depth_gt_var.data[0].cpu()
+        #     depth_to_show[depth_to_show > args.maxdepth] = 0
+        #     train_writer.add_image('train Depth GT Normalized',
+        #                            tensor2array(depth_to_show, max_value=args.maxdepth),
+        #                            n_iter, dataformats='HWC')
 
-            train_writer.add_image('train Depth Output Normalized',
-                                    tensor2array(depths[1].data[0].cpu(), max_value=args.maxdepth),
-                                    n_iter, dataformats='HWC')
+        #     train_writer.add_image('train Depth Output Normalized',
+        #                             tensor2array(depths[1].data[0].cpu(), max_value=args.maxdepth),
+        #                             n_iter, dataformats='HWC')
 
         # record loss and EPE
         losses.update(loss.item(), args.batch_size)
@@ -292,8 +288,7 @@ def train(args, train_loader, dpsnet: PSNet, optimizer, epoch_size, train_writer
         with open(args.save_path/args.log_full_train, 'a') as csvfile:
             writer = csv.writer(csvfile, delimiter='\t')
             writer.writerow([loss.item()])
-        # if i % args.print_freq == 0:
-        #     print('Train: Time {} Data {} Loss {}'.format(batch_time, data_time, losses))
+      
         if i >= epoch_size - 1:
             break
 
@@ -304,11 +299,10 @@ def train(args, train_loader, dpsnet: PSNet, optimizer, epoch_size, train_writer
     return losses.avg[0]
 
 
-def validate_with_gt(args, val_loader, dpsnet, epoch, output_writers=[]):
+def validate_with_gt(args, val_loader, dpsnet, epoch, output_writer):
     batch_time = AverageMeter()
     error_names = ['abs_rel', 'abs_diff', 'sq_rel', 'a1', 'a2', 'a3']
     errors = AverageMeter(i=len(error_names))
-    log_outputs = len(output_writers) > 0
 
     # switch to evaluate mode
     dpsnet.eval()
@@ -318,8 +312,6 @@ def validate_with_gt(args, val_loader, dpsnet, epoch, output_writers=[]):
         pbar = tqdm(enumerate(val_loader), total=len(val_loader), desc="Validating")
 
         for i, (rgb_img, sonar_rect_img, depth_gt, K, KT_inv, distance_range, theta_range) in pbar:
-            # if i > 5: break
-        # for i, (rgb_img, sonar_rect_img, depth_gt, K, KT_inv, distance_range, theta_range) in enumerate(val_loader):
             rgb_img_var = rgb_img.to(device)
             sonar_rect_img_var = sonar_rect_img.to(device)
             depth_gt_var = depth_gt.to(device)
@@ -334,17 +326,20 @@ def validate_with_gt(args, val_loader, dpsnet, epoch, output_writers=[]):
 
             output = torch.squeeze(output_depth.data.cpu(),1)
 
-            if log_outputs and i % 100 == 0:
-                index = int(i//100)
-                val_iter = 1000*n_iter + index
-                output_writers[index].add_image('val rgb Input', tensor2array(rgb_img[0]), val_iter, dataformats='HWC')
-                output_writers[index].add_image('val sonar Input', sonar_tensor2array(sonar_rect_img[0]), val_iter, dataformats='HWC')
+            if i % 10 == 0: # write 10 validation result
+                # val_iter = 100*epoch + i/10
+                val_iter = i/10
+                # tag = f'val_Depth_Output_{epoch}'  # 为每个epoch创建新的tag
+                output_writer.add_image(f'{epoch} val rgb Input', tensor2array(rgb_img[0]), val_iter, dataformats='HWC')
+                output_writer.add_image(f'{epoch} val sonar Input', sonar_tensor2array(sonar_rect_img[0]), val_iter, dataformats='HWC')
                 depth_to_show = depth_gt_var.data[0].cpu()
                 depth_to_show[depth_to_show > args.maxdepth] = 0
-                output_writers[index].add_image('val target Depth Normalized', tensor2array(depth_to_show, max_value=args.maxdepth), val_iter, dataformats='HWC')
+                output_writer.add_image(f'{epoch} val target Depth Normalized', tensor2array(depth_to_show, max_value=args.maxdepth), val_iter, dataformats='HWC')
 
-                output_writers[index].add_image('val Depth Output', tensor2array(output_depth.data[0].cpu(), max_value=args.maxdepth), val_iter, dataformats='HWC')
+                output_writer.add_image(f'{epoch} val Depth Output', tensor2array(output_depth.data[0].cpu(), max_value=args.maxdepth), val_iter, dataformats='HWC')
           
+                output_writer.flush()
+                
             errors.update(compute_errors_train(depth_gt, output, mask))
 
             # measure elapsed time
@@ -352,9 +347,8 @@ def validate_with_gt(args, val_loader, dpsnet, epoch, output_writers=[]):
             end = time.time()
             
             with open(args.save_path/args.log_full_val, 'a') as csvfile:
-                writer = csv.writer(csvfile, delimiter='\t')
-                # writer.writerow([x.item() for x in errors.val])
-                writer.writerow([n_iter] + [round(x.item(), 4) for x in errors.val[:3]])
+                line = f"{epoch}\t" + "\t".join([f"{x:.4f}" for x in errors.val]) + "\n"
+                csvfile.write(line)
             
             pbar.set_postfix(abs_error=f"{errors.val[0]:.4f}")
 

@@ -2,6 +2,7 @@
 /src/sweep/result_*
 /DPS_sonar_net/checkpoints
 /DPS_sonar_net/dataset
-/DPS_sonar_net/result_
-/DPS_sonar_net/result
+/DPS_sonar_net/result_*
+/DPS_sonar_net/result*
 /DPS_sonar_net/pretrained
+/DPS_sonar_net/result_coral_table_loop
